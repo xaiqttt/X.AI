@@ -11,22 +11,20 @@ app.use(bodyParser.json());
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const MODEL_ID = 'gemini-2.0-flash';
-const memoryFile = 'memory.json';
-const memory = fs.existsSync(memoryFile) ? JSON.parse(fs.readFileSync(memoryFile)) : {};
+const MODEL_ID = process.env.MODEL_ID || 'gemini-2.0-flash';
+
 const greetedUsers = new Set();
+const memoryFile = 'memory.json';
+let memory = fs.existsSync(memoryFile) ? JSON.parse(fs.readFileSync(memoryFile)) : {};
 
-function saveMemory() {
-  fs.writeFileSync(memoryFile, JSON.stringify(memory, null, 2));
-}
-
-app.get('/', (req, res) => res.send('X.AI Server is running'));
+app.get('/', (req, res) => {
+  res.send('X.AI server is running');
+});
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
   if (mode && token === VERIFY_TOKEN) {
     res.status(200).send(challenge);
   } else {
@@ -36,7 +34,6 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   const body = req.body;
-
   if (body.object === 'page') {
     for (const entry of body.entry) {
       const event = entry.messaging[0];
@@ -45,28 +42,34 @@ app.post('/webhook', async (req, res) => {
       if (event.message && event.message.text) {
         const userText = event.message.text.trim();
 
+        // Typing ON
+        await sendTyping(senderId, true);
+
+        // Greet new user
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
           await sendMessage(senderId, `I'm X.AI — an intelligent assistant developed by Darwin, powered by Google's Gemini 2.0 Flash. I currently support text-based conversations only. Image analysis is not enabled yet, as it requires a premium API.`);
         }
 
+        // Handle memory with 1-hour reset
         const now = Date.now();
-        const hourAgo = now - 3600000;
-
         if (!memory[senderId]) memory[senderId] = [];
-
-        // Clean up old memory
-        memory[senderId] = memory[senderId].filter(msg => msg.timestamp >= hourAgo);
+        memory[senderId] = memory[senderId].filter(m => now - m.timestamp < 3600000);
         memory[senderId].push({ role: 'user', content: userText, timestamp: now });
 
-        const contextMessages = memory[senderId].map(m => ({ role: 'user', content: m.content }));
+        const aiReply = await askGemini(memory[senderId].map(m => ({
+          role: m.role === 'assistant' ? 'model' : m.role,
+          content: m.content
+        })));
 
-        const aiReply = await askGemini(contextMessages);
         if (aiReply) {
-          memory[senderId].push({ role: 'assistant', content: aiReply, timestamp: Date.now() });
+          memory[senderId].push({ role: 'model', content: aiReply, timestamp: now });
           saveMemory();
-          await sendMessage(senderId, aiReply);
+          await sendMessage(senderId, clean(aiReply));
         }
+
+        // Typing OFF
+        await sendTyping(senderId, false);
       }
     }
     res.sendStatus(200);
@@ -78,7 +81,10 @@ app.post('/webhook', async (req, res) => {
 async function askGemini(messages) {
   try {
     const response = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${GEMINI_API_KEY}`, {
-      contents: messages.map(m => ({ parts: [{ text: m.content }] }))
+      contents: messages.map(m => ({
+        role: m.role,
+        parts: [{ text: m.content }]
+      }))
     }, {
       headers: { 'Content-Type': 'application/json' }
     });
@@ -86,7 +92,7 @@ async function askGemini(messages) {
     return response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   } catch (err) {
     console.error('AI Error:', err.response?.data || err.message);
-    return 'Sorry, something went wrong with the AI.';
+    return 'Sorry, I couldn’t respond right now.';
   }
 }
 
@@ -101,5 +107,29 @@ async function sendMessage(recipientId, text) {
   }
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`X.AI is running on port ${PORT}`));
+async function sendTyping(recipientId, isOn) {
+  try {
+    await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
+      recipient: { id: recipientId },
+      sender_action: isOn ? 'typing_on' : 'typing_off'
+    });
+  } catch (err) {
+    console.error('Typing Error:', err.response?.data || err.message);
+  }
+}
+
+function clean(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // Remove bold markdown
+    .replace(/\n{3,}/g, '\n\n')        // Limit empty lines
+    .trim();
+}
+
+function saveMemory() {
+  fs.writeFileSync(memoryFile, JSON.stringify(memory, null, 2));
+}
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`X.AI is running on port ${PORT}`);
+});
