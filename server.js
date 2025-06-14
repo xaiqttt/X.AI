@@ -43,7 +43,7 @@ app.post('/webhook', async (req, res) => {
 
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId, `Hi, I'm X.AI, built by Darwin. I use Gemini 2.0 Flash (Google's free model). I currently only support text. Let's talk.`);
+          await sendMessage(senderId, `I'm X.AI — an intelligent assistant developed by Darwin, powered by Google's Gemini 2.0 Flash. I currently support text-based conversations only. Image analysis is not enabled yet, as it requires a premium API.`);
         }
 
         const aiReply = await askGemini(userText);
