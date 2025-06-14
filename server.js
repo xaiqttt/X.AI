@@ -38,7 +38,8 @@ app.post('/webhook', async (req, res) => {
 
       if (event.message && event.message.text) {
         const userText = event.message.text.trim();
-        await sendTyping(senderId);
+
+        await sendTyping(senderId, true);
 
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
@@ -47,6 +48,8 @@ app.post('/webhook', async (req, res) => {
 
         const aiReply = await askGemini(userText);
         await sendMessage(senderId, aiReply);
+
+        await sendTyping(senderId, false);
       }
     }
     res.sendStatus(200);
@@ -89,11 +92,11 @@ async function sendMessage(recipientId, text) {
   }
 }
 
-async function sendTyping(recipientId) {
+async function sendTyping(recipientId, isTyping) {
   try {
     await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
       recipient: { id: recipientId },
-      sender_action: 'typing_on'
+      sender_action: isTyping ? 'typing_on' : 'typing_off'
     });
   } catch (err) {
     console.error('Typing Error:', err?.response?.data || err.message);
