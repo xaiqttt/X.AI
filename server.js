@@ -48,7 +48,12 @@ app.post('/webhook', async (req, res) => {
         // Greet new user
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId, `I'm X.AI — an intelligent assistant developed by Darwin, powered by Google's Gemini 2.0 Flash. I currently support text-based conversations only. Image analysis is not enabled yet, as it requires a premium API.`);
+          await sendMessage(senderId, 
+  `You're now chatting with X.AI — a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.\n\n` +
+  `Just like Meta AI, X.AI works even on Facebook Free Mode — no load required.\n\n` +
+  `But here's the edge: X.AI isn't limited to Meta's filters. It gives you cleaner, more flexible responses, powered by the same kind of advanced tech you'd find in paid services.\n\n` +
+  `No ads, no restrictions — just pure, direct assistance.`
+);
         }
 
         // Handle memory with 1-hour reset
