@@ -9,17 +9,7 @@ app.use(bodyParser.json());
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
-
-// Confirm all required API keys are loaded
-console.log('PAGE_ACCESS_TOKEN:', PAGE_ACCESS_TOKEN ? '✅ Loaded' : '❌ Missing');
-console.log('VERIFY_TOKEN:', VERIFY_TOKEN ? '✅ Loaded' : '❌ Missing');
-console.log('OPENROUTER_API_KEY:', OPENROUTER_API_KEY ? '✅ Loaded' : '❌ Missing');
-
-if (!PAGE_ACCESS_TOKEN || !VERIFY_TOKEN || !OPENROUTER_API_KEY) {
-  console.error('❌ Missing one or more required environment variables. Exiting...');
-  process.exit(1);
-}
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
 const greetedUsers = new Set();
 
@@ -52,10 +42,10 @@ app.post('/webhook', async (req, res) => {
 
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId, `Hi, I'm X.AI. I was created by Darwin. I'm powered by the mistralai/mixtral-8x7b-instruct model via OpenRouter. I only support text for now because image features require additional APIs that aren't free.`);
+          await sendMessage(senderId, `Hi, I'm X.AI. I was created by Darwin. I'm powered by Gemini Pro from Google via their free API. I currently support only text because image support needs Gemini Pro Vision, which requires payment and additional setup.`);
         }
 
-        const aiReply = await askAI(userText);
+        const aiReply = await askGemini(userText);
         await sendMessage(senderId, aiReply);
       }
     }
@@ -65,24 +55,25 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-async function askAI(prompt) {
+async function askGemini(prompt) {
   try {
-    const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-      model: 'mistralai/mixtral-8x7b-instruct',
-      messages: [
-        { role: 'user', content: prompt }
-      ]
-    }, {
-      headers: {
-        'Authorization': `Bearer ${OPENROUTER_API_KEY}`,
-        'Content-Type': 'application/json'
+    const response = await axios.post(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + GEMINI_API_KEY,
+      {
+        contents: [{ parts: [{ text: prompt }] }]
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json'
+        }
       }
-    });
+    );
 
-    return response.data.choices[0].message.content.trim();
+    const result = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return result || 'Sorry, I could not understand that.';
   } catch (err) {
-    console.error('AI Error:', err?.response?.data || err.message);
-    return 'Sorry, I could not process your request right now.';
+    console.error('Gemini Error:', err.response?.data || err.message);
+    return 'Sorry, something went wrong with the AI.';
   }
 }
 
@@ -93,7 +84,7 @@ async function sendMessage(recipientId, text) {
       message: { text }
     });
   } catch (err) {
-    console.error('Messenger Error:', err?.response?.data || err.message);
+    console.error('Messenger Error:', err.response?.data || err.message);
   }
 }
 
