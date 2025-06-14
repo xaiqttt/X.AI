@@ -42,7 +42,7 @@ app.post('/webhook', async (req, res) => {
 
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId, `Hi, I'm X.AI. I was created by Darwin. I'm powered by Gemini Pro from Google via their free API. I currently support only text because image support needs Gemini Pro Vision, which requires payment and additional setup.`);
+          await sendMessage(senderId, `Hi, I'm X.AI. I was created by Darwin. I'm powered by Google's Gemini 2.0 Flash model. I only support text for now because image support needs extra setup.`);
         }
 
         const aiReply = await askGemini(userText);
@@ -58,9 +58,13 @@ app.post('/webhook', async (req, res) => {
 async function askGemini(prompt) {
   try {
     const response = await axios.post(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=' + GEMINI_API_KEY,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
-        contents: [{ parts: [{ text: prompt }] }]
+        contents: [
+          {
+            parts: [{ text: prompt }]
+          }
+        ]
       },
       {
         headers: {
@@ -69,11 +73,11 @@ async function askGemini(prompt) {
       }
     );
 
-    const result = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
-    return result || 'Sorry, I could not understand that.';
+    const text = response.data.candidates?.[0]?.content?.parts?.[0]?.text;
+    return text?.trim() || "I couldn't understand that.";
   } catch (err) {
     console.error('Gemini Error:', err.response?.data || err.message);
-    return 'Sorry, something went wrong with the AI.';
+    return 'Sorry, there was a problem talking to the AI.';
   }
 }
 
