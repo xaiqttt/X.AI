@@ -11,6 +11,16 @@ const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 
+// Confirm all required API keys are loaded
+console.log('PAGE_ACCESS_TOKEN:', PAGE_ACCESS_TOKEN ? '✅ Loaded' : '❌ Missing');
+console.log('VERIFY_TOKEN:', VERIFY_TOKEN ? '✅ Loaded' : '❌ Missing');
+console.log('OPENROUTER_API_KEY:', OPENROUTER_API_KEY ? '✅ Loaded' : '❌ Missing');
+
+if (!PAGE_ACCESS_TOKEN || !VERIFY_TOKEN || !OPENROUTER_API_KEY) {
+  console.error('❌ Missing one or more required environment variables. Exiting...');
+  process.exit(1);
+}
+
 const greetedUsers = new Set();
 
 app.get('/', (req, res) => {
@@ -40,10 +50,9 @@ app.post('/webhook', async (req, res) => {
       if (event.message && event.message.text) {
         const userText = event.message.text;
 
-        // Send intro if first time user
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId, `Hi, I'm X.AI. I was created by Darwin. I'm powered by the mistralai/mixtral-8x7b-instruct model via OpenRouter. I only support text for now because image features require additional APIs that aren't free haha.`);
+          await sendMessage(senderId, `Hi, I'm X.AI. I was created by Darwin. I'm powered by the mistralai/mixtral-8x7b-instruct model via OpenRouter. I only support text for now because image features require additional APIs that aren't free.`);
         }
 
         const aiReply = await askAI(userText);
