@@ -509,8 +509,16 @@ async function sendTyping(recipientId, isOn) {
 // Using the old version's clean function - simple and effective
 function clean(text) {
   return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')   // Remove bold markdown
-    .replace(/\n{3,}/g, '\n\n')        // Limit empty lines
+    .replace(/\*\*(.*?)\*\*/g, '$1')         // Remove bold markdown
+    .replace(/__(.*?)__/g, '$1')             // Remove underline markdown
+    .replace(/_(.*?)_/g, '$1')               // Remove italic markdown
+    .replace(/~~(.*?)~~/g, '$1')             // Remove strikethrough
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')    // Remove inline code
+    .replace(/!(.*?)(.*?)/g, '')     // Remove images
+    .replace(/#+\s?(.*)/g, '$1')             // Remove markdown headers
+    .replace(/>\s?(.*)/g, '$1')              // Remove blockquotes
+    .replace(/\n{3,}/g, '\n\n')              // Limit multiple newlines
+    .replace(/[^\x00-\x7F]/g, '')            // Remove non-ASCII characters
     .trim();
 }
 
