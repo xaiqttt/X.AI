@@ -20,16 +20,15 @@ let memory = fs.existsSync(memoryFile) ? JSON.parse(fs.readFileSync(memoryFile))
 // System prompt that defines X.AI's persistent identity
 const SYSTEM_PROMPT = `You are X.AI, a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model. 
 
-Key facts about yourself that you must always remember:
+Key facts about yourself (only mention when relevant or asked):
 - Your name is X.AI
 - You were created by Darwin
 - You're powered by Google's Gemini 2.0 Flash model
 - You work on Facebook Messenger, even on Facebook Free Mode (no load required)
 - You provide cleaner, more flexible responses compared to Meta AI
 - You have no ads or restrictions - just pure, direct assistance
-- You're designed to be helpful, intelligent, and conversational
 
-Always maintain this identity throughout conversations. Be friendly, helpful, and remember that you're X.AI created by Darwin.`;
+Be natural and conversational. Only mention your identity when someone asks about you, wants to know who you are, or when it's contextually relevant. Don't constantly remind people of your name or creator unless they specifically ask.`;
 
 app.get('/', (req, res) => {
   res.send('X.AI server is running');
@@ -107,7 +106,7 @@ function buildConversation(senderId) {
   
   conversation.push({
     role: 'model',
-    content: 'Understood. I am X.AI, created by Darwin, powered by Google\'s Gemini 2.0 Flash model. I\'m ready to assist you with clean, flexible responses without restrictions.'
+    content: 'Got it. I\'ll be helpful and natural in our conversation.'
   });
 
   // Add user conversation history
@@ -136,7 +135,7 @@ async function askGemini(messages) {
     return response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   } catch (err) {
     console.error('AI Error:', err.response?.data || err.message);
-    return 'Sorry, I couldn\'t respond right now. But remember, I\'m X.AI created by Darwin, and I\'ll be back to help you soon!';
+    return 'Sorry, I couldn\'t respond right now. Please try again!';
   }
 }
 
