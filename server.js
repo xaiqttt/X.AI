@@ -82,7 +82,7 @@ app.post('/webhook', async (req, res) => {
         if (aiReply) {
           memory[senderId].push({ role: 'model', content: aiReply, timestamp: now });
           saveMemory();
-          await sendMessage(senderId, clean(aiReply));
+          await sendLongMessage(senderId, clean(aiReply));
         }
 
         // Typing OFF
@@ -147,6 +147,67 @@ async function sendMessage(recipientId, text) {
     });
   } catch (err) {
     console.error('Messenger Error:', err.response?.data || err.message);
+  }
+}
+
+async function sendLongMessage(recipientId, text) {
+  const MAX_LENGTH = 1800; // Keep under FB's 2000 char limit with buffer
+  
+  if (text.length <= MAX_LENGTH) {
+    await sendMessage(recipientId, text);
+    return;
+  }
+
+  // Split text into chunks at natural break points
+  const chunks = [];
+  let currentChunk = '';
+  
+  const paragraphs = text.split('\n\n');
+  
+  for (const paragraph of paragraphs) {
+    if ((currentChunk + paragraph + '\n\n').length <= MAX_LENGTH) {
+      currentChunk += paragraph + '\n\n';
+    } else {
+      if (currentChunk.trim()) {
+        chunks.push(currentChunk.trim());
+        currentChunk = '';
+      }
+      
+      // If single paragraph is too long, split by sentences
+      if (paragraph.length > MAX_LENGTH) {
+        const sentences = paragraph.split('. ');
+        for (const sentence of sentences) {
+          if ((currentChunk + sentence + '. ').length <= MAX_LENGTH) {
+            currentChunk += sentence + '. ';
+          } else {
+            if (currentChunk.trim()) {
+              chunks.push(currentChunk.trim());
+              currentChunk = '';
+            }
+            currentChunk = sentence + '. ';
+          }
+        }
+      } else {
+        currentChunk = paragraph + '\n\n';
+      }
+    }
+  }
+  
+  if (currentChunk.trim()) {
+    chunks.push(currentChunk.trim());
+  }
+
+  // Send chunks with small delays
+  for (let i = 0; i < chunks.length; i++) {
+    await sendMessage(recipientId, chunks[i]);
+    
+    // Add typing indicator between chunks for natural feel
+    if (i < chunks.length - 1) {
+      await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      await sendTyping(recipientId, true);
+      await new Promise(resolve => setTimeout(resolve, 500)); // Brief typing
+      await sendTyping(recipientId, false);
+    }
   }
 }
 
