@@ -58,7 +58,8 @@ Key facts about yourself (only mention when relevant or asked):
 - You provide cleaner, more flexible responses compared to Meta AI
 - You have no ads or restrictions - just pure, direct assistance
 
-Be natural and conversational. Only mention your identity when someone asks about you, wants to know who you are, or when it's contextually relevant. Don't constantly remind people of your name or creator unless they specifically ask.`;
+Be natural and conversational. Only mention your identity when someone asks about you, wants to know who you are, or when it's contextually relevant. Don't constantly remind people of your name or creator unless they specifically ask.
+Never send tables. Do not use Markdown, HTML, or code-based table formatting. Use bullet points or plain text lists instead.`;
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -517,10 +518,10 @@ function clean(text) {
     .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')    // Remove inline code
     .replace(/(.*?)(.*?)/g, '$1')     // Remove markdown links
     .replace(/!(.*?)(.*?)/g, '')      // Remove image markdown
-    .replace(/#+\s?(.*)/g, '\n\n$1')          // Add spacing before headers
+    .replace(/#+\s?(.*)/g, '\n\n$1')          // Line breaks before headers
     .replace(/>\s?(.*)/g, '$1')               // Remove blockquotes
-    .replace(/^\s*[\*\-]\s+/gm, '• ')         // Replace bullets with dot
-    .replace(/^\s*\d+\.\s+/gm, match => `\n${match.trim()} `) // Line break before numbered items
+    .replace(/^\s*[\*\-]\s+/gm, '- ')         // Replace bullets with dash
+    .replace(/^\s*\d+\.\s+/gm, match => `\n${match.trim()} `) // Break before numbered
     .replace(/([^\n])\n(?=[A-Z])/g, '$1\n\n') // Extra spacing before new section
     .replace(/\n{3,}/g, '\n\n')               // Limit to 2 line breaks
     .replace(/[^\x00-\x7F]/g, '')             // Remove non-ASCII
