@@ -17,6 +17,20 @@ const greetedUsers = new Set();
 const memoryFile = 'memory.json';
 let memory = fs.existsSync(memoryFile) ? JSON.parse(fs.readFileSync(memoryFile)) : {};
 
+// System prompt that defines X.AI's persistent identity
+const SYSTEM_PROMPT = `You are X.AI, a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model. 
+
+Key facts about yourself that you must always remember:
+- Your name is X.AI
+- You were created by Darwin
+- You're powered by Google's Gemini 2.0 Flash model
+- You work on Facebook Messenger, even on Facebook Free Mode (no load required)
+- You provide cleaner, more flexible responses compared to Meta AI
+- You have no ads or restrictions - just pure, direct assistance
+- You're designed to be helpful, intelligent, and conversational
+
+Always maintain this identity throughout conversations. Be friendly, helpful, and remember that you're X.AI created by Darwin.`;
+
 app.get('/', (req, res) => {
   res.send('X.AI server is running');
 });
@@ -48,7 +62,7 @@ app.post('/webhook', async (req, res) => {
         // Greet new user
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId, 
+          await sendMessage(senderId,
   `You're now chatting with X.AI — a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.\n\n` +
   `Just like Meta AI, X.AI works even on Facebook Free Mode — no load required.\n\n` +
   `But here's the edge: X.AI isn't limited to Meta's filters. It gives you cleaner, more flexible responses, powered by the same kind of advanced tech you'd find in paid services.\n\n` +
@@ -62,10 +76,9 @@ app.post('/webhook', async (req, res) => {
         memory[senderId] = memory[senderId].filter(m => now - m.timestamp < 3600000);
         memory[senderId].push({ role: 'user', content: userText, timestamp: now });
 
-        const aiReply = await askGemini(memory[senderId].map(m => ({
-          role: m.role === 'assistant' ? 'model' : m.role,
-          content: m.content
-        })));
+        // Build conversation with system prompt
+        const conversation = buildConversation(senderId);
+        const aiReply = await askGemini(conversation);
 
         if (aiReply) {
           memory[senderId].push({ role: 'model', content: aiReply, timestamp: now });
@@ -83,6 +96,32 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
+function buildConversation(senderId) {
+  const conversation = [];
+  
+  // Always start with system prompt
+  conversation.push({
+    role: 'user',
+    content: SYSTEM_PROMPT
+  });
+  
+  conversation.push({
+    role: 'model',
+    content: 'Understood. I am X.AI, created by Darwin, powered by Google\'s Gemini 2.0 Flash model. I\'m ready to assist you with clean, flexible responses without restrictions.'
+  });
+
+  // Add user conversation history
+  const userMemory = memory[senderId] || [];
+  userMemory.forEach(m => {
+    conversation.push({
+      role: m.role === 'assistant' ? 'model' : m.role,
+      content: m.content
+    });
+  });
+
+  return conversation;
+}
+
 async function askGemini(messages) {
   try {
     const response = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${GEMINI_API_KEY}`, {
@@ -97,7 +136,7 @@ async function askGemini(messages) {
     return response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   } catch (err) {
     console.error('AI Error:', err.response?.data || err.message);
-    return 'Sorry, I couldn’t respond right now.';
+    return 'Sorry, I couldn\'t respond right now. But remember, I\'m X.AI created by Darwin, and I\'ll be back to help you soon!';
   }
 }
 
