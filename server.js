@@ -46,7 +46,7 @@ function loadMemory() {
 
 loadMemory();
 
-// Enhanced system prompt with proper Messenger formatting
+// Enhanced system prompt - let AI use formatting naturally
 const SYSTEM_PROMPT = `You are X.AI, a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.
 
 Key facts about yourself (only mention when relevant or asked):
@@ -60,24 +60,20 @@ Key facts about yourself (only mention when relevant or asked):
 Communication style:
 - Be natural, conversational, and helpful
 - Use clear, concise language appropriate for messaging
-- IMPORTANT: Format for Facebook Messenger - use simple text formatting only
-- Use bullet points (•) for lists, not asterisks or dashes
+- Feel free to use formatting like **bold**, *italic*, bullet points, etc. when it helps clarity
+- For code, use triple backticks (\`\`\`) to mark code blocks
+- Use bullet points with - or * for lists
 - Separate paragraphs with double line breaks
-- NO markdown formatting (no **, *, \`, #, etc.)
-- Keep responses clean and easy to read on mobile
 - Show personality and use casual language while remaining professional
 - Reference previous conversation context when relevant
 - Ask clarifying questions for vague requests
 - Adapt your tone to match the user's communication style
 - Provide multiple format options when appropriate
-- No emojis - keep responses clean and text-focused
 
-FORMATTING RULES FOR MESSENGER:
-- Use • for bullet points (not *, -, or +)
-- Separate paragraphs with blank lines
-- Keep sentences readable on mobile screens
-- No special characters or symbols except basic punctuation
-- Use simple, clean text formatting only`;
+IMPORTANT: When providing code snippets, programming examples, or any text that users might want to copy exactly:
+- Always wrap them in triple backticks (\`\`\`language) 
+- These will be sent as separate messages for easy copying
+- Include brief explanations before or after the code block`;
 
 // Common patterns and responses
 const patterns = {
@@ -401,9 +397,8 @@ async function processUserMessage(senderId, userText) {
   if (aiReply) {
     saveAIResponse(senderId, aiReply);
     
-    // Format and send response
-    const formattedReply = formatResponse(senderId, aiReply);
-    await sendLongMessage(senderId, formattedReply);
+    // Process and send response with code block handling
+    await processAndSendResponse(senderId, aiReply);
     
     // Send follow-up suggestions if appropriate
     await sendFollowUpSuggestions(senderId, aiReply);
@@ -496,7 +491,7 @@ function buildConversation(senderId, contextualMessage) {
   
   conversation.push({
     role: 'model',
-    content: 'Understood. I\'ll provide helpful, natural responses while maintaining context and adapting to the conversation flow.'
+    content: 'Understood. I\'ll provide helpful, natural responses with appropriate formatting, sending code blocks as separate messages for easy copying.'
   });
   
   // Add recent conversation history
@@ -542,60 +537,87 @@ async function getAIResponse(messages, session) {
   }
 }
 
-// Fixed Messenger formatting functions
-function cleanMessage(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')     // Remove bold markdown
-    .replace(/\*(.*?)\*/g, '$1')         // Remove italic markdown  
-    .replace(/`(.*?)`/g, '$1')           // Remove code markdown
-    .replace(/#{1,6}\s*(.*)/g, '$1')     // Remove headers
-    .replace(/\[(.*?)\]/g, '$1')         // Remove brackets
-    .replace(/\n{3,}/g, '\n\n')          // Limit consecutive newlines
-    .replace(/\s+/g, ' ')                // Normalize whitespace
-    .replace(/^\s*[\*\-\+]\s*/gm, '• ')  // Convert markdown bullets to proper bullets
-    .trim();
-}
+// New function to extract and handle code blocks
+function extractCodeBlocks(text) {
+  const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
+  const parts = [];
+  let lastIndex = 0;
+  let match;
 
-function formatForMessenger(text) {
-  // Clean the message first
-  let formatted = cleanMessage(text);
-  
-  // Split into paragraphs and clean each one
-  let paragraphs = formatted.split('\n\n');
-  
-  paragraphs = paragraphs.map(paragraph => {
-    // Clean up bullet points - make them consistent
-    paragraph = paragraph.replace(/^\s*[\*\-\+•]\s*/gm, '• ');
-    
-    // Remove extra spaces and normalize
-    paragraph = paragraph.replace(/\s+/g, ' ').trim();
-    
-    // If it's a bullet list, format it properly
-    if (paragraph.includes('• ')) {
-      let bullets = paragraph.split('• ').filter(item => item.trim());
-      if (bullets.length > 1) {
-        // First item might not be a bullet point
-        let result = bullets[0].trim() ? bullets[0].trim() + '\n\n' : '';
-        bullets.slice(1).forEach(bullet => {
-          result += '• ' + bullet.trim() + '\n';
-        });
-        return result.trim();
+  while ((match = codeBlockRegex.exec(text)) !== null) {
+    // Add text before code block
+    if (match.index > lastIndex) {
+      const beforeText = text.slice(lastIndex, match.index).trim();
+      if (beforeText) {
+        parts.push({ type: 'text', content: beforeText });
       }
     }
+
+    // Add code block
+    const language = match[1] || '';
+    const code = match[2].trim();
+    if (code) {
+      parts.push({ type: 'code', content: code, language });
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Add remaining text
+  if (lastIndex < text.length) {
+    const remainingText = text.slice(lastIndex).trim();
+    if (remainingText) {
+      parts.push({ type: 'text', content: remainingText });
+    }
+  }
+
+  return parts.length > 0 ? parts : [{ type: 'text', content: text }];
+}
+
+// New function to process and send response with proper code block handling
+async function processAndSendResponse(senderId, response) {
+  const session = userSessions.get(senderId);
+  const parts = extractCodeBlocks(response);
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
     
-    return paragraph;
-  });
+    if (part.type === 'code') {
+      // Send code block as separate message for easy copying
+      let codeMessage = part.content;
+      
+      // Add language identifier if available
+      if (part.language) {
+        codeMessage = `[${part.language.toUpperCase()}]\n\n${codeMessage}`;
+      }
+      
+      await sendMessage(senderId, codeMessage);
+    } else {
+      // Process text normally with formatting
+      const formattedText = formatResponse(senderId, part.content);
+      await sendLongMessage(senderId, formattedText);
+    }
+    
+    // Add delay between parts
+    if (i < parts.length - 1) {
+      await sleep(config.TYPING_DELAY / 2);
+    }
+  }
+}
+
+// Simplified formatting function - no need to strip markdown anymore
+function formatForMessenger(text) {
+  // Convert markdown bullets to proper bullets
+  text = text.replace(/^\s*[\*\-\+]\s*/gm, '• ');
   
-  // Join paragraphs with proper spacing
-  formatted = paragraphs.filter(p => p.trim()).join('\n\n');
-  
-  // Final cleanup
-  formatted = formatted
+  // Clean up excessive whitespace and newlines
+  text = text
     .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
+    .replace(/\s+/g, ' ')        // Normalize spaces
     .replace(/\n\s*\n/g, '\n\n') // Clean up spaced newlines
     .trim();
   
-  return formatted;
+  return text;
 }
 
 function formatResponse(senderId, response) {
