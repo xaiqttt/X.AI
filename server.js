@@ -515,14 +515,15 @@ function clean(text) {
     .replace(/_(.*?)_/g, '$1')               // Remove italic (underscore)
     .replace(/~~(.*?)~~/g, '$1')             // Remove strikethrough
     .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')    // Remove inline code
-    .replace(/(.*?)(.*?)/g, '$1')    // Remove markdown links
-    .replace(/!(.*?)(.*?)/g, '')     // Remove image markdown
-    .replace(/#+\s?(.*)/g, '$1')             // Remove markdown headers
-    .replace(/>\s?(.*)/g, '$1')              // Remove blockquotes
-    .replace(/^\s*[\*\-]\s+/gm, '')          // Remove bullet points like * or -
-    .replace(/^\s*\d+\.\s+/gm, '')           // Remove numbered lists
-    .replace(/\n{3,}/g, '\n\n')              // Limit newlines
-    .replace(/[^\x00-\x7F]/g, '')            // Remove non-ASCII characters
+    .replace(/(.*?)(.*?)/g, '$1')     // Remove markdown links
+    .replace(/!(.*?)(.*?)/g, '')      // Remove image markdown
+    .replace(/#+\s?(.*)/g, '\n\n$1')          // Add spacing before headers
+    .replace(/>\s?(.*)/g, '$1')               // Remove blockquotes
+    .replace(/^\s*[\*\-]\s+/gm, '• ')         // Replace bullets with dot
+    .replace(/^\s*\d+\.\s+/gm, match => `\n${match.trim()} `) // Line break before numbered items
+    .replace(/([^\n])\n(?=[A-Z])/g, '$1\n\n') // Extra spacing before new section
+    .replace(/\n{3,}/g, '\n\n')               // Limit to 2 line breaks
+    .replace(/[^\x00-\x7F]/g, '')             // Remove non-ASCII
     .trim();
 }
 
