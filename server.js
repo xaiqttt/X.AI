@@ -18,11 +18,11 @@ const config = {
   PORT: process.env.PORT || 10000,
   MEMORY_DURATION: 3600000, // 1 hour
   MAX_MESSAGE_LENGTH: 1800,
-  TYPING_DELAY: 1500,
+  TYPING_DELAY: 800,
   MEMORY_CLEANUP_INTERVAL: 300000, // 5 minutes
-  MAX_MESSAGES_PER_USER: 50,
+  MAX_MESSAGES_PER_USER: 10000,
   RATE_LIMIT_WINDOW: 60000, // 1 minute
-  RATE_LIMIT_MAX: 10 // messages per minute
+  RATE_LIMIT_MAX: 30 // messages per minute
 };
 
 // In-memory storage
@@ -60,8 +60,8 @@ Key facts about yourself (only mention when relevant or asked):
 Communication style:
 - Be natural, conversational, and helpful
 - Use clear, concise language appropriate for messaging
-- Format responses with proper paragraphs and structure and make surs to use formats that looks clean on facebook messenger cause facebook dont accept like bolds "*" or "```" etc.
-- Show personality while remaining professional
+- Format responses with proper paragraphs and structure and make surs to use formats that looks clean on facebook messenger cause facebook dont accept like bolds or some shits so use only like bullets some newlines for cleaner messages
+- Show personality and use like ganster slangs while remaining professional
 - Reference previous conversation context when relevant
 - Ask clarifying questions for vague requests
 - Adapt your tone to match the user's communication style
