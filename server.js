@@ -510,13 +510,15 @@ async function sendTyping(recipientId, isOn) {
 function clean(text) {
   return text
     .replace(/\*\*(.*?)\*\*/g, '$1')         // Remove bold markdown
-    .replace(/__(.*?)__/g, '$1')             // Remove underline markdown
-    .replace(/_(.*?)_/g, '$1')               // Remove italic markdown
+    .replace(/__(.*?)__/g, '$1')             // Remove underline
+    .replace(/_(.*?)_/g, '$1')               // Remove italic
     .replace(/~~(.*?)~~/g, '$1')             // Remove strikethrough
     .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')    // Remove inline code
-    .replace(/!(.*?)(.*?)/g, '')     // Remove images
+    .replace(/!(.*?)(.*?)/g, '')     // Remove image markdown
     .replace(/#+\s?(.*)/g, '$1')             // Remove markdown headers
     .replace(/>\s?(.*)/g, '$1')              // Remove blockquotes
+    .replace(/^\s*[\*\-]\s+/gm, '')          // Remove bullet points like * or -
+    .replace(/^\s*\d+\.\s+/gm, '')           // Remove numbered lists like 1. 2. 3.
     .replace(/\n{3,}/g, '\n\n')              // Limit multiple newlines
     .replace(/[^\x00-\x7F]/g, '')            // Remove non-ASCII characters
     .trim();
