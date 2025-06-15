@@ -10,18 +10,21 @@ app.use(bodyParser.json());
 
 const PAGE_ACCESS_TOKEN = process.env.PAGE_ACCESS_TOKEN;
 const VERIFY_TOKEN = process.env.VERIFY_TOKEN;
-const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const MODEL_ID = process.env.MODEL_ID || 'gemini-2.0-flash';
+
 const greetedUsers = new Set();
+const memoryFile = 'memory.json';
+let memory = fs.existsSync(memoryFile) ? JSON.parse(fs.readFileSync(memoryFile)) : {};
 
 app.get('/', (req, res) => {
-  res.send('X.AI Server is live');
+  res.send('X.AI server is running');
 });
 
 app.get('/webhook', (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
-
   if (mode && token === VERIFY_TOKEN) {
     res.status(200).send(challenge);
   } else {
@@ -31,34 +34,47 @@ app.get('/webhook', (req, res) => {
 
 app.post('/webhook', async (req, res) => {
   const body = req.body;
-
   if (body.object === 'page') {
     for (const entry of body.entry) {
       const event = entry.messaging[0];
       const senderId = event.sender.id;
 
       if (event.message && event.message.text) {
-        const userText = event.message.text;
+        const userText = event.message.text.trim();
 
-        // Typing on
-        await toggleTyping(senderId, true);
+        // Typing ON
+        await sendTyping(senderId, true);
 
-        // First-time intro
+        // Greet new user
         if (!greetedUsers.has(senderId)) {
           greetedUsers.add(senderId);
-          await sendMessage(senderId,
-`I'm X.AI — an intelligent assistant developed by Darwin, powered by Google's Gemini 2.0 Flash.
-I currently support text-based conversations only. 
-Image analysis isn't enabled yet because it requires a premium API.
-
-Like Meta AI, I work even on free data in Facebook Messenger — but I'm better, more responsive, and made just for you.`);
+          await sendMessage(senderId, 
+  `You're now chatting with X.AI — a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.\n\n` +
+  `Just like Meta AI, X.AI works even on Facebook Free Mode — no load required.\n\n` +
+  `But here's the edge: X.AI isn't limited to Meta's filters. It gives you cleaner, more flexible responses, powered by the same kind of advanced tech you'd find in paid services.\n\n` +
+  `No ads, no restrictions — just pure, direct assistance.`
+);
         }
 
-        const aiReply = await askAI(userText, senderId);
-        await sendMessage(senderId, aiReply);
+        // Handle memory with 1-hour reset
+        const now = Date.now();
+        if (!memory[senderId]) memory[senderId] = [];
+        memory[senderId] = memory[senderId].filter(m => now - m.timestamp < 3600000);
+        memory[senderId].push({ role: 'user', content: userText, timestamp: now });
 
-        // Typing off
-        await toggleTyping(senderId, false);
+        const aiReply = await askGemini(memory[senderId].map(m => ({
+          role: m.role === 'assistant' ? 'model' : m.role,
+          content: m.content
+        })));
+
+        if (aiReply) {
+          memory[senderId].push({ role: 'model', content: aiReply, timestamp: now });
+          saveMemory();
+          await sendMessage(senderId, clean(aiReply));
+        }
+
+        // Typing OFF
+        await sendTyping(senderId, false);
       }
     }
     res.sendStatus(200);
@@ -67,49 +83,21 @@ Like Meta AI, I work even on free data in Facebook Messenger — but I'm better,
   }
 });
 
-async function askAI(userInput, senderId) {
+async function askGemini(messages) {
   try {
-    const now = Date.now();
-    const oneHour = 60 * 60 * 1000;
-    let memory = {};
+    const response = await axios.post(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL_ID}:generateContent?key=${GEMINI_API_KEY}`, {
+      contents: messages.map(m => ({
+        role: m.role,
+        parts: [{ text: m.content }]
+      }))
+    }, {
+      headers: { 'Content-Type': 'application/json' }
+    });
 
-    if (fs.existsSync('memory.json')) {
-      memory = JSON.parse(fs.readFileSync('memory.json', 'utf-8'));
-    }
-
-    if (!memory[senderId] || now - memory[senderId].timestamp > oneHour) {
-      memory[senderId] = { history: [], timestamp: now };
-    }
-
-    memory[senderId].history.push({ role: 'user', parts: [{ text: userInput }] });
-    if (memory[senderId].history.length > 5) {
-      memory[senderId].history = memory[senderId].history.slice(-5);
-    }
-
-    const identity = {
-      role: 'user',
-      parts: [{ text: "You are X.AI, an intelligent assistant created by Darwin. Never forget this." }]
-    };
-
-    const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GOOGLE_API_KEY}`,
-      {
-        contents: [identity, ...memory[senderId].history]
-      },
-      {
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-
-    const aiReply = response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || 'No response.';
-    memory[senderId].history.push({ role: 'model', parts: [{ text: aiReply }] });
-    memory[senderId].timestamp = now;
-
-    fs.writeFileSync('memory.json', JSON.stringify(memory, null, 2));
-    return aiReply;
+    return response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   } catch (err) {
-    console.error('AI Error:', err?.response?.data || err.message);
-    return 'Sorry, I could not process your request.';
+    console.error('AI Error:', err.response?.data || err.message);
+    return 'Sorry, I couldn’t respond right now.';
   }
 }
 
@@ -120,22 +108,33 @@ async function sendMessage(recipientId, text) {
       message: { text }
     });
   } catch (err) {
-    console.error('Messenger Error:', err?.response?.data || err.message);
+    console.error('Messenger Error:', err.response?.data || err.message);
   }
 }
 
-async function toggleTyping(recipientId, state) {
+async function sendTyping(recipientId, isOn) {
   try {
     await axios.post(`https://graph.facebook.com/v18.0/me/messages?access_token=${PAGE_ACCESS_TOKEN}`, {
       recipient: { id: recipientId },
-      sender_action: state ? 'typing_on' : 'typing_off'
+      sender_action: isOn ? 'typing_on' : 'typing_off'
     });
   } catch (err) {
-    console.error('Typing Error:', err?.response?.data || err.message);
+    console.error('Typing Error:', err.response?.data || err.message);
   }
 }
 
-const PORT = process.env.PORT || 3000;
+function clean(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // Remove bold markdown
+    .replace(/\n{3,}/g, '\n\n')        // Limit empty lines
+    .trim();
+}
+
+function saveMemory() {
+  fs.writeFileSync(memoryFile, JSON.stringify(memory, null, 2));
+}
+
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`X.AI is running on port ${PORT}`);
 });
