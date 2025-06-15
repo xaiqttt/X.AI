@@ -46,7 +46,7 @@ function loadMemory() {
 
 loadMemory();
 
-// Enhanced system prompt
+// Enhanced system prompt with proper Messenger formatting
 const SYSTEM_PROMPT = `You are X.AI, a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.
 
 Key facts about yourself (only mention when relevant or asked):
@@ -60,13 +60,24 @@ Key facts about yourself (only mention when relevant or asked):
 Communication style:
 - Be natural, conversational, and helpful
 - Use clear, concise language appropriate for messaging
-- Format responses with proper paragraphs and structure and make surs to use formats that looks clean on facebook messenger cause facebook dont accept like bolds or some shits so use only like bullets some newlines for cleaner messages
-- Show personality and use like ganster slangs while remaining professional
+- IMPORTANT: Format for Facebook Messenger - use simple text formatting only
+- Use bullet points (•) for lists, not asterisks or dashes
+- Separate paragraphs with double line breaks
+- NO markdown formatting (no **, *, \`, #, etc.)
+- Keep responses clean and easy to read on mobile
+- Show personality and use casual language while remaining professional
 - Reference previous conversation context when relevant
 - Ask clarifying questions for vague requests
 - Adapt your tone to match the user's communication style
 - Provide multiple format options when appropriate
-- No emojis - keep responses clean and text-focused`;
+- No emojis - keep responses clean and text-focused
+
+FORMATTING RULES FOR MESSENGER:
+- Use • for bullet points (not *, -, or +)
+- Separate paragraphs with blank lines
+- Keep sentences readable on mobile screens
+- No special characters or symbols except basic punctuation
+- Use simple, clean text formatting only`;
 
 // Common patterns and responses
 const patterns = {
@@ -531,9 +542,65 @@ async function getAIResponse(messages, session) {
   }
 }
 
+// Fixed Messenger formatting functions
+function cleanMessage(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')     // Remove bold markdown
+    .replace(/\*(.*?)\*/g, '$1')         // Remove italic markdown  
+    .replace(/`(.*?)`/g, '$1')           // Remove code markdown
+    .replace(/#{1,6}\s*(.*)/g, '$1')     // Remove headers
+    .replace(/\[(.*?)\]/g, '$1')         // Remove brackets
+    .replace(/\n{3,}/g, '\n\n')          // Limit consecutive newlines
+    .replace(/\s+/g, ' ')                // Normalize whitespace
+    .replace(/^\s*[\*\-\+]\s*/gm, '• ')  // Convert markdown bullets to proper bullets
+    .trim();
+}
+
+function formatForMessenger(text) {
+  // Clean the message first
+  let formatted = cleanMessage(text);
+  
+  // Split into paragraphs and clean each one
+  let paragraphs = formatted.split('\n\n');
+  
+  paragraphs = paragraphs.map(paragraph => {
+    // Clean up bullet points - make them consistent
+    paragraph = paragraph.replace(/^\s*[\*\-\+•]\s*/gm, '• ');
+    
+    // Remove extra spaces and normalize
+    paragraph = paragraph.replace(/\s+/g, ' ').trim();
+    
+    // If it's a bullet list, format it properly
+    if (paragraph.includes('• ')) {
+      let bullets = paragraph.split('• ').filter(item => item.trim());
+      if (bullets.length > 1) {
+        // First item might not be a bullet point
+        let result = bullets[0].trim() ? bullets[0].trim() + '\n\n' : '';
+        bullets.slice(1).forEach(bullet => {
+          result += '• ' + bullet.trim() + '\n';
+        });
+        return result.trim();
+      }
+    }
+    
+    return paragraph;
+  });
+  
+  // Join paragraphs with proper spacing
+  formatted = paragraphs.filter(p => p.trim()).join('\n\n');
+  
+  // Final cleanup
+  formatted = formatted
+    .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
+    .replace(/\n\s*\n/g, '\n\n') // Clean up spaced newlines
+    .trim();
+  
+  return formatted;
+}
+
 function formatResponse(senderId, response) {
   const session = userSessions.get(senderId);
-  let formatted = cleanMessage(response);
+  let formatted = formatForMessenger(response);
   
   // Add personal touches when appropriate
   if (session.name && Math.random() < 0.3 && formatted.length < 500) {
@@ -704,17 +771,6 @@ async function sendTyping(recipientId, isOn) {
   } catch (error) {
     console.error('Typing indicator error:', error.response?.data || error.message);
   }
-}
-
-function cleanMessage(text) {
-  return text
-    .replace(/\*\*(.*?)\*\*/g, '$1')     // Remove bold markdown
-    .replace(/\*(.*?)\*/g, '$1')         // Remove italic markdown  
-    .replace(/`(.*?)`/g, '$1')           // Remove code markdown
-    .replace(/#{1,6}\s*(.*)/g, '$1')     // Remove headers
-    .replace(/\n{3,}/g, '\n\n')          // Limit consecutive newlines
-    .replace(/\s+/g, ' ')                // Normalize whitespace
-    .trim();
 }
 
 function saveMemoryToFile() {
