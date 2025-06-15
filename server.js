@@ -27,7 +27,7 @@ const config = {
 
 // In-memory storage
 const greetedUsers = new Set();
-const userSessions = new Map(); // Enhanced user data
+const userSessions = new Map();
 const rateLimiter = new Map();
 const memoryFile = path.join(process.cwd(), 'memory.json');
 let memory = {};
@@ -36,7 +36,8 @@ let memory = {};
 function loadMemory() {
   try {
     if (fs.existsSync(memoryFile)) {
-      memory = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+      const data = JSON.parse(fs.readFileSync(memoryFile, 'utf8'));
+      memory = data.memory || data; // Handle both old and new format
     }
   } catch (error) {
     console.error('Error loading memory:', error);
@@ -46,8 +47,8 @@ function loadMemory() {
 
 loadMemory();
 
-// Enhanced system prompt - let AI use formatting naturally
-const SYSTEM_PROMPT = `You are X.AI, a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.
+// System prompt from the old version - clean and simple
+const SYSTEM_PROMPT = `You are X.AI, a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model. 
 
 Key facts about yourself (only mention when relevant or asked):
 - Your name is X.AI
@@ -57,31 +58,7 @@ Key facts about yourself (only mention when relevant or asked):
 - You provide cleaner, more flexible responses compared to Meta AI
 - You have no ads or restrictions - just pure, direct assistance
 
-Communication style:
-- Be natural, conversational, and helpful
-- Use clear, concise language appropriate for messaging
-- Feel free to use formatting like **bold**, *italic*, bullet points, etc. when it helps clarity
-- For code, use triple backticks (\`\`\`) to mark code blocks
-- Use bullet points with - or * for lists
-- Separate paragraphs with double line breaks
-- Show personality and use casual language while remaining professional
-- Reference previous conversation context when relevant
-- Ask clarifying questions for vague requests
-- Adapt your tone to match the user's communication style
-- Provide multiple format options when appropriate
-
-IMPORTANT: When providing code snippets, programming examples, or any text that users might want to copy exactly:
-- Always wrap them in triple backticks (\`\`\`language) 
-- These will be sent as separate messages for easy copying
-- Include brief explanations before or after the code block`;
-
-// Common patterns and responses
-const patterns = {
-  greetings: ['hi', 'hello', 'hey', 'good morning', 'good afternoon', 'good evening'],
-  thanks: ['thank you', 'thanks', 'appreciate', 'grateful'],
-  confused: ['i dont understand', 'confusing', 'unclear', 'what do you mean'],
-  frustrated: ['this is annoying', 'not working', 'useless', 'terrible', 'hate this']
-};
+Be natural and conversational. Only mention your identity when someone asks about you, wants to know who you are, or when it's contextually relevant. Don't constantly remind people of your name or creator unless they specifically ask.`;
 
 // Health check endpoint
 app.get('/', (req, res) => {
@@ -109,7 +86,7 @@ app.get('/webhook', (req, res) => {
   }
 });
 
-// Main webhook handler with enhanced error handling
+// Main webhook handler
 app.post('/webhook', async (req, res) => {
   try {
     const body = req.body;
@@ -118,7 +95,7 @@ app.post('/webhook', async (req, res) => {
       return res.sendStatus(404);
     }
 
-    // Process all entries concurrently
+    // Process all entries
     const promises = body.entry.map(entry => processEntry(entry).catch(error => {
       console.error('Error processing entry:', error);
     }));
@@ -143,8 +120,7 @@ async function processEntry(entry) {
       name: null,
       lastActive: Date.now(),
       messageCount: 0,
-      tone: 'neutral',
-      context: []
+      tone: 'neutral'
     });
   }
 
@@ -195,9 +171,6 @@ async function handleTextMessage(senderId, text) {
     session.lastActive = Date.now();
     session.messageCount++;
 
-    // Detect user tone and patterns
-    detectUserPatterns(senderId, userMessage);
-
     await sendTyping(senderId, true);
 
     // Handle special commands
@@ -206,15 +179,9 @@ async function handleTextMessage(senderId, text) {
       return;
     }
 
-    // Handle new user greeting
+    // Handle new user greeting - using old version's cleaner approach
     if (!greetedUsers.has(senderId)) {
       await handleNewUser(senderId);
-    }
-
-    // Show thinking message for complex queries
-    if (isComplexQuery(userMessage)) {
-      await sendMessage(senderId, "Let me think about that...");
-      await sleep(800);
     }
 
     await processUserMessage(senderId, text);
@@ -227,29 +194,7 @@ async function handleTextMessage(senderId, text) {
   }
 }
 
-function detectUserPatterns(senderId, message) {
-  const session = userSessions.get(senderId);
-  
-  // Detect greetings
-  if (patterns.greetings.some(greeting => message.includes(greeting))) {
-    session.tone = 'friendly';
-  }
-  
-  // Detect frustration
-  if (patterns.frustrated.some(phrase => message.includes(phrase))) {
-    session.tone = 'frustrated';
-  }
-  
-  // Extract name if mentioned
-  const nameMatch = message.match(/my name is (\w+)|i'm (\w+)|call me (\w+)/);
-  if (nameMatch) {
-    session.name = nameMatch[1] || nameMatch[2] || nameMatch[3];
-  }
-}
-
 async function handleSpecialCommands(senderId, message) {
-  const session = userSessions.get(senderId);
-  
   if (message === '/help' || message === 'help') {
     const helpText = 
       "Here's what I can help you with:\n\n" +
@@ -272,8 +217,7 @@ async function handleSpecialCommands(senderId, message) {
       "Powered by: Google's Gemini 2.0 Flash\n" +
       "Platform: Facebook Messenger\n\n" +
       "I provide clean, direct assistance without ads or restrictions. " +
-      "I work even on Facebook Free Mode, so no data charges required!\n\n" +
-      `We've had ${session.messageCount} messages in our conversation so far.`;
+      "I work even on Facebook Free Mode, so no data charges required!";
     
     await sendMessage(senderId, aboutText);
     return true;
@@ -281,7 +225,6 @@ async function handleSpecialCommands(senderId, message) {
   
   if (message === '/reset' || message === 'reset conversation') {
     memory[senderId] = [];
-    session.context = [];
     await sendMessage(senderId, "Our conversation has been reset. What would you like to talk about?");
     return true;
   }
@@ -289,49 +232,20 @@ async function handleSpecialCommands(senderId, message) {
   return false;
 }
 
-function isComplexQuery(message) {
-  const complexIndicators = [
-    'explain', 'analyze', 'compare', 'calculate', 'solve', 'write', 'create',
-    'how does', 'why is', 'what happens if', 'difference between'
-  ];
-  
-  return complexIndicators.some(indicator => message.includes(indicator)) && message.length > 20;
-}
-
 async function handleNewUser(senderId) {
   greetedUsers.add(senderId);
   
+  // Using the old version's greeting - much cleaner
   const greeting = 
-    "Welcome to X.AI!\n\n" +
-    "I'm your intelligent assistant, developed by Darwin and powered by Google's Gemini 2.0 Flash model.\n\n" +
-    "Key benefits:\n" +
-    "• Works on Facebook Free Mode - no data charges\n" +
-    "• No ads or restrictions\n" +
-    "• Clean, flexible responses\n" +
-    "• Remembers our conversation context\n\n" +
-    "What would you like to know or discuss today?";
+    `You're now chatting with X.AI — a custom-built intelligent assistant developed by Darwin and powered by Google's Gemini 2.0 Flash model.\n\n` +
+    `Just like Meta AI, X.AI works even on Facebook Free Mode — no load required.\n\n` +
+    `But here's the edge: X.AI isn't limited to Meta's filters. It gives you cleaner, more flexible responses, powered by the same kind of advanced tech you'd find in paid services.\n\n` +
+    `No ads, no restrictions — just pure, direct assistance.`;
   
   await sendMessage(senderId, greeting);
-  
-  // Send quick suggestions after a brief pause
-  await sleep(2000);
-  await sendQuickSuggestions(senderId);
-}
-
-async function sendQuickSuggestions(senderId) {
-  const suggestions = 
-    "Here are some things you can try:\n\n" +
-    "• Ask me to explain a topic\n" +
-    "• Get help with writing or analysis\n" +
-    "• Solve math or logic problems\n" +
-    "• Have a general conversation\n" +
-    "• Type '/help' for more options";
-  
-  await sendMessage(senderId, suggestions);
 }
 
 async function handleAttachment(senderId, attachments) {
-  const session = userSessions.get(senderId);
   let response = "I received your ";
   
   const types = attachments.map(att => {
@@ -351,12 +265,9 @@ async function handleAttachment(senderId, attachments) {
   }
   
   response += ".\n\n" +
-    "Currently, I can only process text messages, but I'm actively working on supporting multimedia content. " +
-    "For now, you can:\n\n" +
-    "• Describe what you want to know about the content\n" +
-    "• Ask questions about the topic in text\n" +
-    "• Upload text-based documents that I might be able to help with in the future\n\n" +
-    "What would you like to discuss instead?";
+    "Currently, I can only process text messages. You can describe what you want to know about the content, " +
+    "or ask questions about the topic in text format instead.\n\n" +
+    "What would you like to discuss?";
   
   await sendMessage(senderId, response);
 }
@@ -380,55 +291,24 @@ async function handlePostback(senderId, postback) {
 }
 
 async function processUserMessage(senderId, userText) {
-  const session = userSessions.get(senderId);
-  
   // Update memory
   updateUserMemory(senderId, userText);
   
-  // Add context clues for better responses
-  const contextualMessage = addContextualClues(senderId, userText);
-  
   // Build conversation
-  const conversation = buildConversation(senderId, contextualMessage);
+  const conversation = buildConversation(senderId);
   
   // Get AI response
-  const aiReply = await getAIResponse(conversation, session);
+  const aiReply = await getAIResponse(conversation);
   
   if (aiReply) {
     saveAIResponse(senderId, aiReply);
     
-    // Process and send response with code block handling
-    await processAndSendResponse(senderId, aiReply);
-    
-    // Send follow-up suggestions if appropriate
-    await sendFollowUpSuggestions(senderId, aiReply);
+    // Use the old version's clean formatting
+    const formattedReply = clean(aiReply);
+    await sendLongMessage(senderId, formattedReply);
   } else {
     await sendErrorRecovery(senderId, new Error('No AI response'));
   }
-}
-
-function addContextualClues(senderId, userText) {
-  const session = userSessions.get(senderId);
-  let contextualMessage = userText;
-  
-  // Add name context
-  if (session.name) {
-    contextualMessage += `\n[User's name is ${session.name}]`;
-  }
-  
-  // Add tone context
-  if (session.tone === 'frustrated') {
-    contextualMessage += '\n[User seems frustrated - be extra helpful and patient]';
-  } else if (session.tone === 'friendly') {
-    contextualMessage += '\n[User is being friendly - match their energy]';
-  }
-  
-  // Add conversation count context
-  if (session.messageCount > 10) {
-    contextualMessage += '\n[This is an ongoing conversation with multiple exchanges]';
-  }
-  
-  return contextualMessage;
 }
 
 function updateUserMemory(senderId, text) {
@@ -469,60 +349,41 @@ function saveAIResponse(senderId, response) {
   saveMemoryToFile();
 }
 
-function buildConversation(senderId, contextualMessage) {
+function buildConversation(senderId) {
   const conversation = [];
-  const session = userSessions.get(senderId);
   
-  // Enhanced system prompt with session context
-  let enhancedPrompt = SYSTEM_PROMPT;
-  
-  if (session.name) {
-    enhancedPrompt += `\n[The user's name is ${session.name} - use it naturally when appropriate]`;
-  }
-  
-  if (session.messageCount > 1) {
-    enhancedPrompt += '\n[This is an ongoing conversation - reference previous topics when relevant]';
-  }
-  
+  // Always start with system prompt - from old version
   conversation.push({
     role: 'user',
-    content: enhancedPrompt
+    content: SYSTEM_PROMPT
   });
   
   conversation.push({
     role: 'model',
-    content: 'Understood. I\'ll provide helpful, natural responses with appropriate formatting, sending code blocks as separate messages for easy copying.'
+    content: 'Got it. I\'ll be helpful and natural in our conversation.'
   });
-  
-  // Add recent conversation history
+
+  // Add user conversation history
   const userMemory = memory[senderId] || [];
-  userMemory.forEach(msg => {
+  userMemory.forEach(m => {
     conversation.push({
-      role: msg.role === 'assistant' ? 'model' : msg.role,
-      content: msg.content
+      role: m.role === 'assistant' ? 'model' : m.role,
+      content: m.content
     });
   });
-  
+
   return conversation;
 }
 
-async function getAIResponse(messages, session) {
+async function getAIResponse(messages) {
   try {
-    const generationConfig = {
-      temperature: session.tone === 'frustrated' ? 0.5 : 0.7,
-      topK: 40,
-      topP: 0.95,
-      maxOutputTokens: 1024,
-    };
-    
     const response = await axios.post(
       `https://generativelanguage.googleapis.com/v1beta/models/${config.MODEL_ID}:generateContent?key=${config.GEMINI_API_KEY}`,
       {
         contents: messages.map(msg => ({
           role: msg.role,
           parts: [{ text: msg.content }]
-        })),
-        generationConfig
+        }))
       },
       {
         headers: { 'Content-Type': 'application/json' },
@@ -533,150 +394,22 @@ async function getAIResponse(messages, session) {
     return response.data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
   } catch (error) {
     console.error('Gemini API Error:', error.response?.data || error.message);
-    return null;
-  }
-}
-
-// New function to extract and handle code blocks
-function extractCodeBlocks(text) {
-  const codeBlockRegex = /```(\w+)?\n?([\s\S]*?)```/g;
-  const parts = [];
-  let lastIndex = 0;
-  let match;
-
-  while ((match = codeBlockRegex.exec(text)) !== null) {
-    // Add text before code block
-    if (match.index > lastIndex) {
-      const beforeText = text.slice(lastIndex, match.index).trim();
-      if (beforeText) {
-        parts.push({ type: 'text', content: beforeText });
-      }
-    }
-
-    // Add code block
-    const language = match[1] || '';
-    const code = match[2].trim();
-    if (code) {
-      parts.push({ type: 'code', content: code, language });
-    }
-
-    lastIndex = match.index + match[0].length;
-  }
-
-  // Add remaining text
-  if (lastIndex < text.length) {
-    const remainingText = text.slice(lastIndex).trim();
-    if (remainingText) {
-      parts.push({ type: 'text', content: remainingText });
-    }
-  }
-
-  return parts.length > 0 ? parts : [{ type: 'text', content: text }];
-}
-
-// New function to process and send response with proper code block handling
-async function processAndSendResponse(senderId, response) {
-  const session = userSessions.get(senderId);
-  const parts = extractCodeBlocks(response);
-
-  for (let i = 0; i < parts.length; i++) {
-    const part = parts[i];
-    
-    if (part.type === 'code') {
-      // Send code block as separate message for easy copying
-      let codeMessage = part.content;
-      
-      // Add language identifier if available
-      if (part.language) {
-        codeMessage = `[${part.language.toUpperCase()}]\n\n${codeMessage}`;
-      }
-      
-      await sendMessage(senderId, codeMessage);
-    } else {
-      // Process text normally with formatting
-      const formattedText = formatResponse(senderId, part.content);
-      await sendLongMessage(senderId, formattedText);
-    }
-    
-    // Add delay between parts
-    if (i < parts.length - 1) {
-      await sleep(config.TYPING_DELAY / 2);
-    }
-  }
-}
-
-// Simplified formatting function - no need to strip markdown anymore
-function formatForMessenger(text) {
-  // Convert markdown bullets to proper bullets
-  text = text.replace(/^\s*[\*\-\+]\s*/gm, '• ');
-  
-  // Clean up excessive whitespace and newlines
-  text = text
-    .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
-    .replace(/\s+/g, ' ')        // Normalize spaces
-    .replace(/\n\s*\n/g, '\n\n') // Clean up spaced newlines
-    .trim();
-  
-  return text;
-}
-
-function formatResponse(senderId, response) {
-  const session = userSessions.get(senderId);
-  let formatted = formatForMessenger(response);
-  
-  // Add personal touches when appropriate
-  if (session.name && Math.random() < 0.3 && formatted.length < 500) {
-    // Occasionally use the user's name naturally
-    if (!formatted.toLowerCase().includes(session.name.toLowerCase())) {
-      const greetings = [`${session.name}, `, `Hope this helps, ${session.name}. `, `${session.name}, here's what I think: `];
-      if (Math.random() < 0.5) {
-        formatted = greetings[Math.floor(Math.random() * greetings.length)] + formatted.charAt(0).toLowerCase() + formatted.slice(1);
-      }
-    }
-  }
-  
-  return formatted;
-}
-
-async function sendFollowUpSuggestions(senderId, aiResponse) {
-  // Only send suggestions occasionally and for certain types of responses
-  if (Math.random() < 0.4 && aiResponse.length > 200) {
-    await sleep(2000);
-    
-    const suggestions = [
-      "Would you like me to explain any part in more detail?",
-      "Need another example or a different approach?",
-      "Want me to break this down further?",
-      "Any questions about what I just explained?",
-      "Would you like to explore this topic deeper?"
-    ];
-    
-    const suggestion = suggestions[Math.floor(Math.random() * suggestions.length)];
-    await sendMessage(senderId, suggestion);
+    return 'Sorry, I couldn\'t respond right now. Please try again!';
   }
 }
 
 async function sendErrorRecovery(senderId, error) {
-  const session = userSessions.get(senderId);
-  
-  let errorMessage;
+  let errorMessage = "I encountered an issue processing that request. ";
   
   if (error.code === 'ECONNABORTED') {
-    errorMessage = "The request took too long to process. Let me try to help you with something else instead.";
+    errorMessage = "The request took too long to process. ";
   } else if (error.response?.status === 429) {
     errorMessage = "I'm getting a lot of requests right now. Please wait a moment and try again.";
-  } else {
-    errorMessage = "I encountered an issue processing that request.";
+    await sendMessage(senderId, errorMessage);
+    return;
   }
   
-  // Add helpful alternatives
-  errorMessage += "\n\nHere's what I can definitely help you with right now:\n" +
-    "• Answer general questions\n" +
-    "• Explain concepts or topics\n" +
-    "• Help with writing tasks\n" +
-    "• Have a conversation\n\n" +
-    "What would you like to try instead?";
-  
+  errorMessage += "What else can I help you with?";
   await sendMessage(senderId, errorMessage);
 }
 
@@ -696,53 +429,46 @@ async function sendMessage(recipientId, text) {
   }
 }
 
+// Using the old version's sendLongMessage - it's simpler and more reliable
 async function sendLongMessage(recipientId, text) {
-  if (text.length <= config.MAX_MESSAGE_LENGTH) {
+  const MAX_LENGTH = config.MAX_MESSAGE_LENGTH;
+  
+  if (text.length <= MAX_LENGTH) {
     await sendMessage(recipientId, text);
     return;
   }
 
-  const chunks = splitMessage(text);
-  
-  for (let i = 0; i < chunks.length; i++) {
-    await sendMessage(recipientId, chunks[i]);
-    
-    if (i < chunks.length - 1) {
-      await sleep(config.TYPING_DELAY);
-      await sendTyping(recipientId, true);
-      await sleep(800);
-      await sendTyping(recipientId, false);
-      await sleep(200);
-    }
-  }
-}
-
-function splitMessage(text) {
+  // Split text into chunks at natural break points
   const chunks = [];
   let currentChunk = '';
   
   const paragraphs = text.split('\n\n');
   
   for (const paragraph of paragraphs) {
-    const potentialChunk = currentChunk + (currentChunk ? '\n\n' : '') + paragraph;
-    
-    if (potentialChunk.length <= config.MAX_MESSAGE_LENGTH) {
-      currentChunk = potentialChunk;
+    if ((currentChunk + paragraph + '\n\n').length <= MAX_LENGTH) {
+      currentChunk += paragraph + '\n\n';
     } else {
       if (currentChunk.trim()) {
         chunks.push(currentChunk.trim());
+        currentChunk = '';
       }
       
-      if (paragraph.length > config.MAX_MESSAGE_LENGTH) {
-        const sentences = splitLongParagraph(paragraph);
-        sentences.forEach(sentence => {
-          if (sentence.trim()) {
-            chunks.push(sentence.trim());
+      // If single paragraph is too long, split by sentences
+      if (paragraph.length > MAX_LENGTH) {
+        const sentences = paragraph.split('. ');
+        for (const sentence of sentences) {
+          if ((currentChunk + sentence + '. ').length <= MAX_LENGTH) {
+            currentChunk += sentence + '. ';
+          } else {
+            if (currentChunk.trim()) {
+              chunks.push(currentChunk.trim());
+              currentChunk = '';
+            }
+            currentChunk = sentence + '. ';
           }
-        });
-        currentChunk = '';
+        }
       } else {
-        currentChunk = paragraph;
+        currentChunk = paragraph + '\n\n';
       }
     }
   }
@@ -750,34 +476,19 @@ function splitMessage(text) {
   if (currentChunk.trim()) {
     chunks.push(currentChunk.trim());
   }
-  
-  return chunks;
-}
 
-function splitLongParagraph(paragraph) {
-  const chunks = [];
-  let currentChunk = '';
-  
-  const sentences = paragraph.split(/(?<=[.!?])\s+/);
-  
-  for (const sentence of sentences) {
-    const potentialChunk = currentChunk + (currentChunk ? ' ' : '') + sentence;
+  // Send chunks with small delays
+  for (let i = 0; i < chunks.length; i++) {
+    await sendMessage(recipientId, chunks[i]);
     
-    if (potentialChunk.length <= config.MAX_MESSAGE_LENGTH) {
-      currentChunk = potentialChunk;
-    } else {
-      if (currentChunk.trim()) {
-        chunks.push(currentChunk.trim());
-      }
-      currentChunk = sentence;
+    // Add typing indicator between chunks for natural feel
+    if (i < chunks.length - 1) {
+      await sleep(1000);
+      await sendTyping(recipientId, true);
+      await sleep(500);
+      await sendTyping(recipientId, false);
     }
   }
-  
-  if (currentChunk.trim()) {
-    chunks.push(currentChunk.trim());
-  }
-  
-  return chunks;
 }
 
 async function sendTyping(recipientId, isOn) {
@@ -793,6 +504,14 @@ async function sendTyping(recipientId, isOn) {
   } catch (error) {
     console.error('Typing indicator error:', error.response?.data || error.message);
   }
+}
+
+// Using the old version's clean function - simple and effective
+function clean(text) {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, '$1')   // Remove bold markdown
+    .replace(/\n{3,}/g, '\n\n')        // Limit empty lines
+    .trim();
 }
 
 function saveMemoryToFile() {
